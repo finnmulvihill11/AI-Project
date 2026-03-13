@@ -1,2 +1,2 @@
 # AI-Project
-- Interview Prep Full Project
+Interview Prep Full Project
