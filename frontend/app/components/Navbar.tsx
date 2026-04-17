@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useAuth, useUser, useClerk } from "@clerk/nextjs";
 import { useState, useRef, useEffect } from "react";
 
@@ -70,18 +70,47 @@ function AboutDropdown() {
 function UserAvatar() {
   const { user } = useUser();
   const { signOut } = useClerk();
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
   const first = user?.firstName?.[0] ?? "";
   const last = user?.lastName?.[0] ?? "";
   const initials = (first + last).toUpperCase() || user?.emailAddresses[0]?.emailAddress[0].toUpperCase() || "?";
 
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
   return (
-    <button
-      onClick={() => signOut({ redirectUrl: "/" })}
-      title="Sign out"
-      className="h-8 px-2 min-w-8 rounded-full bg-[#0a0a0a] text-white text-xs font-semibold flex items-center justify-center hover:bg-neutral-700 transition-colors tracking-wide"
-    >
-      {initials}
-    </button>
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="h-8 px-2 min-w-8 rounded-full bg-[#0a0a0a] text-white text-xs font-semibold flex items-center justify-center hover:bg-neutral-700 transition-colors tracking-wide"
+      >
+        {initials}
+      </button>
+      {open && (
+        <div className="absolute top-full right-0 mt-2.5 w-44 bg-white border border-[#e5e5e5] rounded-lg shadow-sm py-1.5 z-50">
+          <button
+            onClick={() => { setOpen(false); router.push("/settings"); }}
+            className="w-full text-left px-4 py-2.5 text-sm text-[#0a0a0a] hover:bg-[#f5f5f5] transition-colors"
+          >
+            Settings
+          </button>
+          <div className="border-t border-[#e5e5e5] my-1" />
+          <button
+            onClick={() => signOut({ redirectUrl: "/" })}
+            className="w-full text-left px-4 py-2.5 text-sm text-neutral-500 hover:bg-[#f5f5f5] transition-colors"
+          >
+            Sign out
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 

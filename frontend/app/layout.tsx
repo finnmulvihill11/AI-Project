@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import "./globals.css";
 import Navbar from "./components/Navbar";
+import OnboardingGuard from "./components/OnboardingGuard";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -29,7 +30,9 @@ export default function RootLayout({
       <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full`}>
         <body className="min-h-full flex flex-col bg-white text-[#0a0a0a] antialiased">
           <Navbar />
-          <main className="flex-1">{children}</main>
+          <OnboardingGuard>
+            <main className="flex-1">{children}</main>
+          </OnboardingGuard>
         </body>
       </html>
     </ClerkProvider>
