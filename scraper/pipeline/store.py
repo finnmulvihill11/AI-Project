@@ -3,6 +3,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from scraper.pipeline.normalize import normalize_company
+from scraper.pipeline.quality import score_question
 
 MIGRATIONS_DIR = Path(__file__).parent.parent / "db" / "migrations"
 
@@ -45,23 +46,30 @@ def run_migrations(db_path: str):
 def save_question(conn: sqlite3.Connection, question: dict, canonical_id: str = None) -> str:
     """Insert a question. Returns the new question's id."""
     qid = str(uuid.uuid4())
+    company = normalize_company(question.get("company"))
+    quality_score = score_question(question["question_text"], company or "Unknown")
+    quality_assessed_at = datetime.now(timezone.utc).isoformat() if quality_score is not None else None
+
     conn.execute("""
         INSERT OR IGNORE INTO questions
             (id, canonical_id, question_text, answer_text, company, role,
-             source_url, scraped_at, source_date, content_hash, embedding)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             source_url, scraped_at, source_date, content_hash, embedding,
+             quality_score, quality_assessed_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         qid,
         canonical_id or qid,
         question["question_text"],
         question.get("answer_text"),
-        normalize_company(question.get("company")),
+        company,
         question.get("role"),
         question["source_url"],
         datetime.now(timezone.utc).isoformat(),
         question.get("source_date"),
         question["content_hash"],
         question.get("embedding"),
+        quality_score,
+        quality_assessed_at,
     ))
     conn.commit()
     return qid

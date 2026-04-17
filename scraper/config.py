@@ -120,3 +120,33 @@ SOURCES = [
     },
     {"type": "reddit_search", "company": "Google"},
 ]
+
+# --- Company Profiles ---
+PROFILES_DB = "scraper/db/profiles.db"
+
+# Max Reddit posts to analyze per company when building a profile.
+# More posts = richer profile but more Haiku calls.
+MAX_PROFILE_POSTS = 30
+
+# Query templates for profile scraping — focused on process/experience, not just questions.
+# {company} is substituted automatically per source.
+PROFILE_REDDIT_QUERY_TEMPLATES = [
+    "{company} interview experience",
+    "{company} interview process",
+    "{company} onsite interview",
+    "{company} phone screen experience",
+    "{company} hiring process",
+]
+
+# Companies to build profiles for.
+# Add a company here to include it in the next profile scrape run.
+PROFILE_SOURCES = [
+    {
+        "type": "reddit_search",
+        "company": "Google",
+        "queries": [t.format(company="Google") for t in PROFILE_REDDIT_QUERY_TEMPLATES],
+    },
+    # Add Amazon and Jane Street once Google profile is validated
+    # {"type": "reddit_search", "company": "Amazon", "queries": [t.format(company="Amazon") for t in PROFILE_REDDIT_QUERY_TEMPLATES]},
+    # {"type": "reddit_search", "company": "Jane Street", "queries": [t.format(company="Jane Street") for t in PROFILE_REDDIT_QUERY_TEMPLATES]},
+]

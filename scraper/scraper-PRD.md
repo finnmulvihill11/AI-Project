@@ -153,6 +153,8 @@ Adding a new company = add a new entry. No new pipeline code.
 | scraped_at | TEXT | ISO timestamp — enables targeted re-scraping |
 | content_hash | TEXT | SHA-256 of question_text for exact dedup |
 | embedding | BLOB | Raw vector always stored — enables re-dedup without re-scraping |
+| quality_score | INTEGER | 1–5 realism score assigned by Haiku at scrape time (see Quality Scoring) |
+| quality_assessed_at | TEXT | ISO timestamp of when the score was assigned |
 
 ### `review` table (staging.db only)
 | Field | Type | Notes |
@@ -235,6 +237,28 @@ Rules given to Haiku:
 - If the page has neither questions nor useful links, return empty array
 
 Large files are chunked by markdown section headers (`##`, `###`) before sending. Chunks processed in parallel, results merged before dedup.
+
+## Quality Scoring
+
+Every question is assigned a realism score (1–5) by Haiku at scrape time, stored in `quality_score`. The score reflects how likely the question is to appear in a real interview at the tagged company — specifically, whether it could be handed to a candidate verbatim without editing.
+
+| Score | Meaning |
+|---|---|
+| 5 | Complete, specific, directly askable as-is |
+| 4 | Real, specific question with minor phrasing roughness |
+| 3 | Grammatically a question but too vague or generic |
+| 2 | A real topic as a fragment — not yet a question |
+| 1 | Not a question: titles, labels, fragments, descriptions of questions |
+
+**Key rule:** The score is based solely on the text as written, not on Haiku's background knowledge of what a topic might involve. A LeetCode problem title ("Trapping Rain Water") is a 1 even if the underlying problem is a real interview question.
+
+**When it runs:** `score_question()` is called inside `save_question()` in `store.py`, so every new question is scored at insert time. For bulk back-filling, `score_batch(conn)` in `quality.py` scores all unscored questions in the DB.
+
+**Serving threshold:** Only questions scoring 4+ should be served directly to users. Score 3 questions may be usable with review. Scores 1–2 should be filtered out of the user-facing pool.
+
+**Rate limiting:** Haiku Tier 1 allows 50 RPM. The scorer enforces a 1.3s delay between calls to stay under the limit. TPM is tracked proactively and will pause automatically if approached.
+
+---
 
 ## Scrapable Domain Allowlist
 
@@ -347,6 +371,7 @@ scraper/
 │   ├── extract.py         ← Haiku extraction, chunking, returns structured JSON
 │   ├── dedup.py           ← hash + embedding similarity, canonical chain
 │   ├── store.py           ← SQLite write logic (staging.db)
+│   ├── quality.py         ← Haiku realism scoring (1–5); score_question() + score_batch()
 │   ├── validate.py        ← chain quality report, borderline flags
 │   └── promote.py         ← moves approved data from staging.db → questions.db
 ├── db/
@@ -385,6 +410,76 @@ OPENAI_API_KEY=...        # for text-embedding-3-small
 9. `promote.py` — staging → production
 10. Wire everything in `scraper.ipynb` with live output
 11. Run end-to-end on Google, review validation report, tune if needed
+
+---
+
+## Company Profiles Pipeline
+
+Separate pipeline that scrapes Reddit for company-level behavioral and interview style data. Stored in `profiles.db`, keyed by company name — same key as the questions table so Matthew's model can join them.
+
+### Why
+Without this, the AI interviewer is generic. With it, Matthew's model can mimic how a Google interviewer actually behaves vs. Amazon vs. Jane Street.
+
+### Schema — `company_profiles` table
+
+| Field | Type | Notes |
+|---|---|---|
+| company | TEXT (PK) | Matches `company` field in questions table |
+| num_rounds | INTEGER | Most commonly reported number of interview rounds |
+| has_take_home | INTEGER | 0/1 — whether a take-home assignment is part of the process |
+| has_whiteboard | INTEGER | 0/1 — whether live coding is done without a compiler (whiteboard or shared doc) |
+| uses_lc_style | INTEGER | 0/1 — whether LeetCode-style DSA problems are used |
+| behavioral_framework | TEXT | e.g. "STAR", "Leadership Principles", "none" |
+| interview_tone | TEXT | Free-form prose — vibe and demeanor of interviewers |
+| interview_style | TEXT | Free-form prose — how interviews are conducted |
+| pipeline_overview | TEXT | Free-form prose — full process from first contact to offer |
+| what_they_value | TEXT | Free-form prose — what the company looks for in candidates |
+| posts_analyzed | INTEGER | Number of Reddit posts synthesized |
+| source_urls | TEXT | JSON array of Reddit URLs used |
+| scraped_at | TEXT | ISO timestamp |
+
+### How it works
+
+```
+PROFILE_SOURCES config (reddit_search per company)
+    → discover_reddit_search (reuse existing)
+    → crawl (reuse existing — fetches post + comments)
+    → extract_signals() — Haiku extracts partial signals from each post
+    → synthesize_profile() — Haiku merges all signals into one final profile
+    → store_profiles.save_profile() — upserts to profiles.db
+```
+
+**Two-step Haiku approach:**
+1. `extract_signals(file)` — reads one Reddit post, returns structured partial signals (nulls for anything not mentioned)
+2. `synthesize_profile(company, signals, source_urls)` — takes all signals from N posts, produces the final cohesive profile with majority-vote structured fields and consensus prose
+
+### Source
+Reddit only for now — best legal source for interview tone and narrative. 30 posts per company (`MAX_PROFILE_POSTS` in config). Query templates in `PROFILE_REDDIT_QUERY_TEMPLATES` focus on process/experience posts, not just question-sharing posts.
+
+### Update cadence
+Scrape once. Re-scrape only when a company significantly changes its interview process. Not part of the regular scrape loop.
+
+### Config
+```python
+PROFILES_DB = "scraper/db/profiles.db"
+MAX_PROFILE_POSTS = 30
+PROFILE_SOURCES = [
+    {"type": "reddit_search", "company": "Google", "queries": [...]},
+    # Add Amazon, Jane Street once Google profile is validated
+]
+```
+
+### File structure additions
+```
+scraper/
+├── pipeline/
+│   ├── extract_profile.py   ← Haiku signal extraction + synthesis
+│   └── store_profiles.py    ← profiles.db connection, migrations, save_profile()
+├── db/
+│   ├── profiles.db          ← company profiles (separate from questions)
+│   └── profile_migrations/
+│       └── 001_company_profiles.sql
+```
 
 ---
 

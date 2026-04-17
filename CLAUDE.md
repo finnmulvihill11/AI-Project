@@ -78,3 +78,49 @@ Two-layer approach:
 
 - Windows 11
 - Python preferred over TypeScript
+
+---
+
+# Frontend
+
+## Stack
+
+- **Framework:** Next.js 16.2.2, TypeScript, App Router
+- **Styling:** Tailwind CSS v4 — config lives in `app/globals.css` via `@theme` block, NOT `tailwind.config.js`
+- **Auth:** Clerk (`@clerk/nextjs` v7) — keys in `frontend/.env.local`
+- **Fonts:** Geist Sans + Geist Mono via `next/font/google`
+- **Location:** `frontend/` folder in this repo
+
+## Key conventions
+
+- Tailwind v4: use `@theme inline { --color-* }` in globals.css for custom tokens. `bg-white`, `text-[#0a0a0a]` etc. work normally.
+- Next.js 16 App Router: dynamic route params (`params`) are a `Promise` — must be `await`-ed in server components.
+- Clerk v7: `SignedIn`/`SignedOut` components don't exist — use `useAuth()` hook. Sign-in/sign-up pages must be catch-all routes: `[[...rest]]/page.tsx`.
+- Interview page (`/interview/*`) hides the Navbar — checked in `Navbar.tsx` via `usePathname`.
+
+## Pages built
+
+| Route | Status | Notes |
+|---|---|---|
+| `/` | Done | Hero, logo ticker, stats, how it works, CTA strip, footer |
+| `/prep` | Placeholder | Company/role selection, routes to `/interview/demo-session` |
+| `/interview/[sessionId]` | Placeholder | Dark UI, voice panel, code box, mock state |
+| `/analysis/[sessionId]` | Mock data | Scores, feedback, CTAs |
+| `/performance` | Mock data | Stats, bar chart, history table |
+| `/sign-in`, `/sign-up` | Done | Clerk hosted components |
+| `/about` | Done | How it works, companies, team, pricing — anchor sections |
+
+## What's not built yet
+
+- Stripe integration (free trial enforcement, subscription)
+- Wire up Matthew's voice/interview API
+- Wire up real company/role data from Finn's DB
+- Vercel deployment
+
+## Design system
+
+- Yellow: `#f5c518` — CTAs, accents, step numbers, score highlights
+- Black: `#0a0a0a` — headings, primary buttons
+- White: `#ffffff` — background
+- Border: `#e5e5e5`, Surface: `#f5f5f5`, Muted text: `text-neutral-500`
+- Interview page only: dark background `bg-[#0a0a0a]`
