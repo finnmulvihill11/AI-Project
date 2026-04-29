@@ -1,19 +1,14 @@
-# API keys — never commit
-.env
-
-# Databases
-*.db
-
 # Python
+venv/
 __pycache__/
 *.pyc
 *.pyo
-.venv/
-venv/
 
-# Jupyter
-.ipynb_checkpoints/
+# Secrets
+.env
 
-# OS
-.DS_Store
-Thumbs.db
+# Database and audio
+*.db
+audio/
+*.webm
+*.mp3
