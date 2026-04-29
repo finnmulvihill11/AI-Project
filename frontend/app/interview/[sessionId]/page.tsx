@@ -1,113 +1,211 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useRouter, useParams } from "next/navigation";
+import { useInterview } from "../../../lib/useInterview";
 
-// Mock interview state — replace with Matthew's API
-const MOCK_COMPANY = "Google";
-const MOCK_ROLE = "Software Engineer";
+type SessionContext = { company: string; role: string };
 
-type Message = {
-  role: "interviewer" | "you";
-  text: string;
-};
-
-const INITIAL_MESSAGES: Message[] = [
-  {
-    role: "interviewer",
-    text: `Hi, I'm your interviewer today. We're doing a ${MOCK_ROLE} interview at ${MOCK_COMPANY}. Let's start with a coding problem. Are you ready?`,
-  },
-];
+function getSessionContext(): SessionContext {
+  if (typeof window === "undefined") return { company: "", role: "" };
+  try {
+    const raw = localStorage.getItem("pendingSession");
+    return raw ? (JSON.parse(raw) as SessionContext) : { company: "", role: "" };
+  } catch {
+    return { company: "", role: "" };
+  }
+}
 
 export default function InterviewPage() {
-  const router = useRouter();
-  const [muted, setMuted] = useState(false);
-  const [speaking, setSpeaking] = useState(true); // interviewer speaking state
-  const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
+  const router    = useRouter();
+  const params    = useParams();
+  const sessionId = params.sessionId as string;
+
+  const interview = useInterview();
+  const [elapsed, setElapsed]     = useState(0);
   const [codeInput, setCodeInput] = useState("");
-  const chatRef = useRef<HTMLDivElement>(null);
+  const [session, setSession]     = useState<SessionContext>({ company: "", role: "" });
+
+  useEffect(() => { setSession(getSessionContext()); }, []);
 
   useEffect(() => {
-    // Simulate interviewer finishing speaking after 2s
-    const t = setTimeout(() => setSpeaking(false), 2000);
-    return () => clearTimeout(t);
-  }, []);
+    if (sessionId) interview.connect(sessionId);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
 
   useEffect(() => {
-    chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages]);
+    if (interview.analysisReady) router.push(`/analysis/${sessionId}`);
+  }, [interview.analysisReady, sessionId, router]);
 
-  function handleEndInterview() {
-    router.push("/analysis/demo-session");
+  useEffect(() => {
+    if (interview.status !== "active") return;
+    const id = setInterval(() => setElapsed(e => e + 1), 1000);
+    return () => clearInterval(id);
+  }, [interview.status]);
+
+  const { sendPseudocode } = interview;
+  useEffect(() => {
+    if (codeInput) sendPseudocode(codeInput);
+  }, [codeInput, sendPseudocode]);
+
+  const mm = String(Math.floor(elapsed / 60)).padStart(2, "0");
+  const ss = String(elapsed % 60).padStart(2, "0");
+
+  // ── Connecting ──────────────────────────────────────────────────────────────
+
+  if (interview.status === "idle" || interview.status === "connecting") {
+    return (
+      <div className="h-screen bg-[#1c1c1e] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-8 h-8 rounded-full border-2 border-white/20 border-t-white/60 animate-spin" />
+          <p className="text-sm text-white/30">Connecting...</p>
+        </div>
+      </div>
+    );
   }
 
+  // ── Error ───────────────────────────────────────────────────────────────────
+
+  if (interview.status === "error") {
+    return (
+      <div className="h-screen bg-[#1c1c1e] flex items-center justify-center px-6">
+        <div className="flex flex-col items-center gap-4 text-center max-w-sm">
+          <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center">
+            <span className="text-red-400 font-bold">!</span>
+          </div>
+          <p className="text-sm font-semibold text-white/60">Something went wrong</p>
+          <p className="text-xs text-white/25">{interview.error}</p>
+          <button
+            onClick={() => router.push("/prep")}
+            className="text-sm text-white/40 hover:text-white/70 underline transition-colors"
+          >
+            Back to prep
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Active / Analyzing ──────────────────────────────────────────────────────
+
+  const isAnalyzing = interview.status === "analyzing" || interview.status === "done";
+
   return (
-    <div className="h-screen bg-[#0a0a0a] text-white flex flex-col">
+    <div className="h-screen bg-[#1c1c1e] text-white flex flex-col">
+
       {/* Top bar */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
         <div className="flex items-center gap-3">
-          <span className="text-sm font-semibold">{MOCK_COMPANY}</span>
-          <span className="text-white/30">·</span>
-          <span className="text-sm text-white/60">{MOCK_ROLE}</span>
+          <span className="text-sm font-semibold">{session.company || "Interview"}</span>
+          {session.role && (
+            <>
+              <span className="text-white/20">·</span>
+              <span className="text-sm text-white/50">{session.role}</span>
+            </>
+          )}
         </div>
-        <div className="flex items-center gap-2 text-sm text-white/40">
-          <span>00:00</span>
+        <div className="flex items-center gap-3">
+          {isAnalyzing ? (
+            <span className="text-xs text-white/25">Generating analysis...</span>
+          ) : (
+            <>
+              <div className="flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
+                <span className="text-xs text-white/30">Live</span>
+              </div>
+              <span className="text-sm font-mono text-white/40 tabular-nums">{mm}:{ss}</span>
+            </>
+          )}
         </div>
       </div>
 
       {/* Main content */}
       <div className="flex flex-1 overflow-hidden">
+
         {/* Left — voice panel */}
-        <div className="flex-1 flex flex-col items-center justify-center border-r border-white/10 px-8">
+        <div className="flex-1 flex flex-col items-center justify-center border-r border-white/10 px-8 gap-8">
+
           {/* Speaking indicator */}
-          <div className="flex flex-col items-center gap-6 mb-12">
-            <div className="relative flex items-center justify-center">
+          <div className="flex flex-col items-center gap-5">
+            <div className="relative flex items-center justify-center w-36 h-36">
+              {interview.interviewerSpeaking && (
+                <div className="absolute inset-0 rounded-full bg-[#f5c518]/5 animate-ping" />
+              )}
               <div
-                className={`w-20 h-20 rounded-full bg-[#f5c518]/10 flex items-center justify-center transition-all ${
-                  speaking ? "scale-110" : "scale-100"
+                className={`absolute inset-4 rounded-full transition-all duration-700 ${
+                  interview.interviewerSpeaking ? "bg-[#f5c518]/10" : "bg-white/5"
                 }`}
-              >
+              />
+              <div
+                className={`absolute inset-8 rounded-full transition-all duration-500 ${
+                  interview.interviewerSpeaking ? "bg-[#f5c518]/20" : "bg-white/[0.06]"
+                }`}
+              />
+              <div
+                className={`w-5 h-5 rounded-full transition-all duration-300 ${
+                  isAnalyzing
+                    ? "bg-white/10"
+                    : interview.interviewerSpeaking
+                    ? "bg-[#f5c518] scale-110"
+                    : "bg-white/25"
+                }`}
+              />
+            </div>
+
+            <div className="flex flex-col items-center gap-1 text-center">
+              <p className="text-xs font-semibold uppercase tracking-widest text-white/50">
+                {isAnalyzing
+                  ? "Scoring"
+                  : interview.interviewerSpeaking
+                  ? "Interviewer"
+                  : "You"}
+              </p>
+              <p className="text-sm text-white/25">
+                {isAnalyzing
+                  ? "Generating your analysis..."
+                  : interview.interviewerSpeaking
+                  ? "Speaking..."
+                  : "Your turn to respond"}
+              </p>
+            </div>
+          </div>
+
+          {/* Question progress */}
+          {interview.totalQuestions > 0 && !isAnalyzing && (
+            <div className="flex items-center gap-2">
+              {Array.from({ length: interview.totalQuestions }).map((_, i) => (
                 <div
-                  className={`w-4 h-4 rounded-full bg-[#f5c518] transition-all ${
-                    speaking ? "animate-pulse scale-125" : ""
+                  key={i}
+                  className={`h-1 w-8 rounded-full transition-all duration-300 ${
+                    i < interview.questionIndex - 1
+                      ? "bg-[#f5c518]"
+                      : i === interview.questionIndex - 1
+                      ? "bg-[#f5c518]/50"
+                      : "bg-white/10"
                   }`}
                 />
-              </div>
-              {speaking && (
-                <div className="absolute inset-0 rounded-full bg-[#f5c518]/20 animate-ping" />
-              )}
+              ))}
+              <span className="text-xs text-white/20 ml-1 font-mono">
+                {interview.questionIndex}/{interview.totalQuestions}
+              </span>
             </div>
-            <p className="text-sm text-white/40">
-              {speaking ? "Interviewer is speaking..." : "Your turn"}
-            </p>
-          </div>
-
-          {/* Message feed */}
-          <div
-            ref={chatRef}
-            className="w-full max-w-md h-48 overflow-y-auto space-y-3 scrollbar-none"
-          >
-            {messages.map((msg, i) => (
-              <div key={i} className={`text-sm ${msg.role === "interviewer" ? "text-white/80" : "text-white/50 text-right"}`}>
-                <span className="text-xs uppercase tracking-wider text-white/30 mr-2">
-                  {msg.role === "interviewer" ? "Interviewer" : "You"}
-                </span>
-                {msg.text}
-              </div>
-            ))}
-          </div>
+          )}
         </div>
 
-        {/* Right — code/text panel */}
+        {/* Right — code panel */}
         <div className="w-96 flex flex-col">
-          <div className="px-4 py-3 border-b border-white/10">
+          <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between">
             <p className="text-xs text-white/40 uppercase tracking-wider">Code / Notes</p>
+            <span className="text-[10px] text-white/20 font-mono bg-white/5 px-2 py-0.5 rounded">
+              plaintext
+            </span>
           </div>
           <textarea
             value={codeInput}
             onChange={(e) => setCodeInput(e.target.value)}
             placeholder="Write pseudocode, notes, or code here..."
-            className="flex-1 bg-transparent text-sm text-white/80 font-mono p-4 resize-none focus:outline-none placeholder:text-white/20"
+            disabled={isAnalyzing}
+            className="flex-1 bg-transparent text-sm text-white/70 font-mono p-4 resize-none focus:outline-none placeholder:text-white/15 leading-relaxed disabled:opacity-40"
           />
         </div>
       </div>
@@ -115,23 +213,26 @@ export default function InterviewPage() {
       {/* Bottom bar */}
       <div className="flex items-center justify-between px-6 py-4 border-t border-white/10">
         <button
-          onClick={() => setMuted((m) => !m)}
-          className={`flex items-center gap-2 text-sm px-4 py-2 rounded-md transition-colors ${
-            muted
-              ? "bg-white/10 text-white/40"
-              : "bg-white/5 text-white/70 hover:bg-white/10"
+          onClick={interview.toggleMute}
+          disabled={isAnalyzing}
+          className={`text-sm px-4 py-2 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${
+            interview.isMuted
+              ? "bg-white/10 text-white/35"
+              : "bg-white/5 text-white/55 hover:bg-white/10"
           }`}
         >
-          {muted ? "Unmute" : "Mute"}
+          {interview.isMuted ? "Unmute" : "Mute"}
         </button>
 
         <button
-          onClick={handleEndInterview}
-          className="text-sm bg-red-500/20 text-red-400 px-4 py-2 rounded-md hover:bg-red-500/30 transition-colors"
+          onClick={interview.endInterview}
+          disabled={isAnalyzing}
+          className="text-sm bg-red-500/10 text-red-400/80 px-5 py-2 rounded-lg hover:bg-red-500/20 transition-colors border border-red-500/20 disabled:opacity-30 disabled:cursor-not-allowed"
         >
           End interview
         </button>
       </div>
+
     </div>
   );
 }

@@ -114,6 +114,7 @@ async def create_session(body: dict):
 
     # ── Mock data path (MVP — no DB questions yet) ────────────────────────────
     questions       = get_mock_questions(n=2)
+    question_ids    = [q["id"] for q in questions]
     company_profile = get_mock_company_profile(company_id)
     briefings       = {q["id"]: json.loads(q["briefing"]) for q in questions}
     summaries       = {q["id"]: q["question_text"][:200] for q in questions}

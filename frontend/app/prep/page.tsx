@@ -126,6 +126,8 @@ export default function PrepPage() {
 
   const [search, setSearch] = useState("");
   const [roleSearch, setRoleSearch] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
 
   const myCompanyIds = (user?.unsafeMetadata?.targetCompanies as string[] | undefined) ?? [];
   const myCompanies = myCompanyIds
@@ -153,9 +155,46 @@ export default function PrepPage() {
     setRoleSearch("");
   }
 
-  function handleStart() {
+  async function handleStart() {
     if (!selectedCompany || !selectedRole) return;
-    router.push("/interview/demo-session");
+    setLoading(true);
+    setStartError(null);
+
+    // Request mic permission here so there's no jarring popup mid-interview
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach(t => t.stop());
+    } catch {
+      setStartError("Microphone access is required. Please allow it and try again.");
+      setLoading(false);
+      return;
+    }
+
+    const company = allCompanies.find(c => c.id === selectedCompany)!;
+    localStorage.setItem("pendingSession", JSON.stringify({
+      company: company.name,
+      role: selectedRole,
+    }));
+
+    const companyId = selectedCompany.replace(/-/g, "_");
+    const roleId    = selectedRole.toLowerCase().replace(/[\s()]+/g, "_").replace(/_+$/, "");
+
+    try {
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8000"}/sessions`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ company_id: companyId, role_id: roleId, round: "phone_screen" }),
+        }
+      );
+      if (!res.ok) throw new Error();
+      const { session_id } = await res.json();
+      router.push(`/interview/${session_id}`);
+    } catch {
+      setStartError("Couldn't connect to the interview server. Make sure the backend is running on port 8000.");
+      setLoading(false);
+    }
   }
 
   return (
@@ -339,15 +378,18 @@ export default function PrepPage() {
 
           <button
             onClick={handleStart}
-            disabled={!selectedRole}
+            disabled={!selectedRole || loading}
             className={`w-full py-3 rounded-md font-semibold text-sm transition-colors ${
-              selectedRole
+              selectedRole && !loading
                 ? "bg-[#f5c518] text-[#0a0a0a] hover:bg-yellow-400 cursor-pointer"
                 : "bg-[#e5e5e5] text-neutral-400 cursor-not-allowed"
             }`}
           >
-            Start interview
+            {loading ? "Starting..." : "Start interview"}
           </button>
+          {startError && (
+            <p className="text-xs text-red-500 mt-2 text-center">{startError}</p>
+          )}
         </div>
       )}
     </div>

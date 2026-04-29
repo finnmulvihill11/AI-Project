@@ -137,9 +137,19 @@ async def run_interview_loop(websocket: WebSocket, session_id: str):
     ).fetchall()
     conn.close()
 
-    company_profile  = dict(company)
+    from mock_data import get_mock_company_profile
+    company_profile  = dict(company) if company else get_mock_company_profile(session["company_id"])
     questions_by_id  = {q["id"]: dict(q) for q in questions_rows}
     briefings        = json.loads(session["question_briefings"])
+
+    # Fall back to briefing data for any question not found in DB (mock mode)
+    for q_id, briefing in briefings.items():
+        if q_id not in questions_by_id:
+            questions_by_id[q_id] = {
+                "id":            q_id,
+                "question_text": briefing.get("question", ""),
+                "category":      briefing.get("category", "coding"),
+            }
     session_context  = {"role": session["role_id"], "round": session["round"]}
 
     # Accumulators written to DB at session end
